@@ -59,6 +59,11 @@
 
         <!-- 断开连接按钮 -->
         <button @click="disconnect" class="disconnect-btn">断开连接</button>
+
+        <!-- 聊天组件 -->
+        <div class="chat-container">
+          <Chat room-id="room_001" />
+        </div>
       </div>
     </main>
   </div>
@@ -322,5 +327,10 @@ const disconnect = () => {
 .disconnect-btn:hover {
   background: rgba(239, 68, 68, 0.3);
   border-color: rgba(239, 68, 68, 0.6);
+}
+
+.chat-container {
+  margin-top: 20px;
+  height: 400px;
 }
 </style>
