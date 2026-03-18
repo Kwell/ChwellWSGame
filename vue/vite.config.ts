@@ -1,3 +1,4 @@
+# Vite config for ChwellWSGame
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
@@ -16,5 +17,7 @@ export default defineConfig({
   build: {
     outDir: '../build/ui',
     emptyOutDir: true
-  }
+  },
+  // 处理 .proto 文件
+  assetsInclude: ['**/*.proto']
 })

@@ -18,7 +18,38 @@
             placeholder="ws://localhost:8080"
             @keyup.enter="connect"
           />
-          <button @click="connect">连接</button>
+          <button @click="connect" :disabled="isConnecting">
+            {{ isConnecting ? '连接中...' : '连接' }}
+          </button>
+        </div>
+        <div v-if="connectionError" class="error">
+          {{ connectionError }}
+        </div>
+      </div>
+
+      <!-- 登录面板 -->
+      <div v-else-if="!player" class="panel">
+        <h2>玩家登录</h2>
+        <div class="input-group">
+          <input
+            v-model="playerId"
+            type="text"
+            placeholder="玩家ID"
+            @keyup.enter="handleLogin"
+          />
+        </div>
+        <div class="input-group">
+          <input
+            v-model="token"
+            type="password"
+            placeholder="Token"
+            @keyup.enter="handleLogin"
+          />
+        </div>
+        <div class="input-group">
+          <button @click="handleLogin" :disabled="isLoggingIn">
+            {{ isLoggingIn ? '登录中...' : '登录' }}
+          </button>
         </div>
         <div v-if="connectionError" class="error">
           {{ connectionError }}
@@ -28,7 +59,7 @@
       <!-- 游戏主界面 -->
       <div v-else class="game-ui">
         <!-- HUD - 玩家信息 -->
-        <div v-if="player" class="hud">
+        <div class="hud">
           <div class="player-info">
             <div class="info-row">
               <span class="label">玩家:</span>
@@ -57,13 +88,31 @@
           </div>
         </div>
 
+        <!-- 聊天区域 -->
+        <div class="chat-container">
+          <div class="chat-messages">
+            <div
+              v-for="(msg, index) in chatMessages"
+              :key="index"
+              class="chat-message"
+            >
+              <span class="message-sender">{{ msg.fromPlayerId }}:</span>
+              <span class="message-content">{{ msg.content }}</span>
+            </div>
+          </div>
+          <div class="chat-input">
+            <input
+              v-model="chatInput"
+              type="text"
+              placeholder="输入聊天内容..."
+              @keyup.enter="sendChatMessage"
+            />
+            <button @click="sendChatMessage">发送</button>
+          </div>
+        </div>
+
         <!-- 断开连接按钮 -->
         <button @click="disconnect" class="disconnect-btn">断开连接</button>
-
-        <!-- 聊天组件 -->
-        <div class="chat-container">
-          <Chat room-id="room_001" />
-        </div>
       </div>
     </main>
   </div>
@@ -72,15 +121,21 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useGameStore, ConnectionState } from './store/game'
-import Chat from './components/Chat.vue'
 
 const gameStore = useGameStore()
 
 const serverUrl = ref('ws://localhost:8080')
+const playerId = ref('')
+const token = ref('')
+const chatInput = ref('')
 
 const connectionState = computed(() => gameStore.connectionState)
 const connectionError = computed(() => gameStore.connectionError)
 const player = computed(() => gameStore.player)
+const chatMessages = computed(() => gameStore.chatMessages)
+
+const isConnecting = computed(() => connectionState.value === ConnectionState.Connecting)
+const isLoggingIn = ref(false)
 
 const connectionClass = computed(() => ({
   disconnected: connectionState.value === ConnectionState.Disconnected,
@@ -111,12 +166,50 @@ const energyPercent = computed(() => {
   return (player.value.energy / player.value.maxEnergy) * 100
 })
 
-const connect = () => {
-  gameStore.connectToServer(serverUrl.value)
+const connect = async () => {
+  try {
+    await gameStore.connectToServer(serverUrl.value)
+  } catch (error) {
+    console.error('Connection failed:', error)
+  }
 }
 
 const disconnect = () => {
   gameStore.disconnectFromServer()
+}
+
+const handleLogin = () => {
+  if (!playerId.value || !token.value) {
+    alert('请输入玩家ID和Token')
+    return
+  }
+
+  isLoggingIn.value = true
+  try {
+    gameStore.login(playerId.value, token.value)
+  } catch (error) {
+    console.error('Login failed:', error)
+    isLoggingIn.value = false
+  }
+
+  // 监听登录结果
+  const checkLogin = () => {
+    if (player.value || connectionError.value) {
+      isLoggingIn.value = false
+    } else {
+      setTimeout(checkLogin, 100)
+    }
+  }
+  checkLogin()
+}
+
+const sendChatMessage = () => {
+  if (!chatInput.value.trim()) {
+    return
+  }
+
+  gameStore.sendChat('global', chatInput.value)
+  chatInput.value = ''
 }
 </script>
 
@@ -201,6 +294,7 @@ const disconnect = () => {
 .input-group {
   display: flex;
   gap: 10px;
+  margin-bottom: 10px;
 }
 
 .input-group input {
@@ -229,8 +323,13 @@ const disconnect = () => {
   transition: transform 0.2s;
 }
 
-.input-group button:hover {
+.input-group button:hover:not(:disabled) {
   transform: scale(1.05);
+}
+
+.input-group button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .error {
@@ -245,7 +344,10 @@ const disconnect = () => {
 
 .game-ui {
   width: 100%;
-  max-width: 400px;
+  max-width: 1200px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .hud {
@@ -253,7 +355,6 @@ const disconnect = () => {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   padding: 20px;
-  margin-bottom: 20px;
 }
 
 .player-info {
@@ -311,6 +412,73 @@ const disconnect = () => {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
+.chat-container {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 20px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-height: 400px;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 10px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+}
+
+.chat-message {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.message-sender {
+  font-weight: 600;
+  color: #667eea;
+  margin-right: 8px;
+}
+
+.message-content {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.chat-input {
+  display: flex;
+  gap: 10px;
+}
+
+.chat-input input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  color: white;
+  font-size: 14px;
+}
+
+.chat-input button {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.chat-input button:hover {
+  transform: scale(1.05);
+}
+
 .disconnect-btn {
   width: 100%;
   padding: 12px;
@@ -328,10 +496,5 @@ const disconnect = () => {
 .disconnect-btn:hover {
   background: rgba(239, 68, 68, 0.3);
   border-color: rgba(239, 68, 68, 0.6);
-}
-
-.chat-container {
-  margin-top: 20px;
-  height: 400px;
 }
 </style>

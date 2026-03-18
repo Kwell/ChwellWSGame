@@ -1,8 +1,7 @@
 // WebSocket 服务类
 // 处理与 ChwellCore 的通信
 import { EventEmitter } from 'events'
-import protobuf from 'protobufjs/light'
-import gameProto from '../../proto/game.proto'
+import * as protobuf from './protobuf'
 
 // 消息类型
 export enum MessageType {
@@ -29,10 +28,7 @@ export class GameWebSocket extends EventEmitter {
   private reconnectDelay = 3000
   private heartbeatInterval: NodeJS.Timeout | null = null
   private heartbeatIntervalMs = 30000 // 30秒心跳
-
-  // Protobuf 类型
-  private root: protobuf.Root | null = null
-  private messageTypes: Record<string, protobuf.Type> = {}
+  private protobufInitialized = false
 
   constructor(url: string) {
     super()
@@ -41,8 +37,14 @@ export class GameWebSocket extends EventEmitter {
 
   // 连接服务器
   async connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       try {
+        // 初始化 Protobuf
+        if (!this.protobufInitialized) {
+          await protobuf.initProtobuf()
+          this.protobufInitialized = true
+        }
+
         this.ws = new WebSocket(this.url)
         this.ws.binaryType = 'arraybuffer'
 
@@ -98,7 +100,7 @@ export class GameWebSocket extends EventEmitter {
 
     try {
       // 编码为 Protobuf
-      const encoded = this.encodeMessage(type, data)
+      const encoded = protobuf.encodeMessage(type, data)
       this.ws.send(encoded)
       console.log('Sent:', type, data)
     } catch (error) {
@@ -133,37 +135,23 @@ export class GameWebSocket extends EventEmitter {
   private handleMessage(data: ArrayBuffer): void {
     try {
       // 解码 Protobuf 消息
-      const message = this.decodeMessage(data)
+      const message = protobuf.decodeMessage(new Uint8Array(data))
       console.log('Received:', message)
 
       // 根据消息类型分发事件
       if (message.S2C_Login) {
         this.emit('login', message.S2C_Login)
       } else if (message.S2C_Chat) {
-        this.emit('chat', message.S2C_Chat)
+        this.emit('chat', {
+          fromPlayerId: message.S2C_Chat.from_player_id,
+          content: message.S2C_Chat.content
+        })
       } else if (message.S2C_Heartbeat) {
         this.emit('heartbeat', message.S2C_Heartbeat)
       }
     } catch (error) {
       console.error('Failed to handle message:', error)
     }
-  }
-
-  // 编码消息为 Protobuf
-  private encodeMessage(type: string, data: any): Uint8Array {
-    // TODO: 使用 Protobuf 编码
-    // 这里先返回 JSON 作为临时方案
-    const message = {
-      [type]: data
-    }
-    return new TextEncoder().encode(JSON.stringify(message))
-  }
-
-  // 解码 Protobuf 消息
-  private decodeMessage(data: ArrayBuffer): any {
-    // TODO: 使用 Protobuf 解码
-    // 这里先使用 JSON 作为临时方案
-    return JSON.parse(new TextDecoder().decode(data))
   }
 
   // 开始心跳

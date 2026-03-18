@@ -1,8 +1,17 @@
 import create from 'zustand'
 import GameWebSocket, { ConnectionState } from '../utils/websocket'
 
-// 连接状态枚举 (从 WebSocket 导入)
-export { ConnectionState }
+// 登录请求
+export interface LoginRequest {
+  playerId: string
+  token: string
+}
+
+// 聊天请求
+export interface ChatRequest {
+  roomId: string
+  content: string
+}
 
 // 玩家信息
 export interface Player {
@@ -20,21 +29,25 @@ export interface Player {
 export interface ChatMessage {
   fromPlayerId: string
   content: string
-  timestamp: number
 }
 
 // 游戏状态接口
 interface GameState {
+  // WebSocket 实例
+  ws: GameWebSocket | null
+
   // 连接状态
   connectionState: ConnectionState
   connectionError: string | null
-  webSocket: GameWebSocket | null
 
   // 玩家信息
   player: Player | null
 
   // 聊天消息
   chatMessages: ChatMessage[]
+
+  // 登录信息
+  loginInfo: LoginRequest | null
 
   // Actions
   setConnectionState: (state: ConnectionState) => void
@@ -43,7 +56,7 @@ interface GameState {
   setPlayer: (player: Player | null) => void
   addChatMessage: (message: ChatMessage) => void
 
-  // WebSocket 连接
+  // 连接/断开
   connectToServer: (url: string) => Promise<void>
   disconnectFromServer: () => void
 
@@ -55,11 +68,12 @@ interface GameState {
 // 创建 store
 export const useGameStore = create<GameState>((set, get) => ({
   // 初始状态
+  ws: null,
   connectionState: ConnectionState.Disconnected,
   connectionError: null,
-  webSocket: null,
   player: null,
   chatMessages: [],
+  loginInfo: null,
 
   // Actions
   setConnectionState: (state) => set({ connectionState: state }),
@@ -77,101 +91,121 @@ export const useGameStore = create<GameState>((set, get) => ({
       chatMessages: [...state.chatMessages, message]
     })),
 
+  // 连接到服务器
   connectToServer: async (url: string) => {
     try {
+      set({ connectionState: ConnectionState.Connecting, connectionError: null })
+
+      // 创建 WebSocket 实例
       const ws = new GameWebSocket(url)
 
-      // 监听事件
-      ws.on('connecting', () => {
-        set({ connectionState: ConnectionState.Connecting, connectionError: null })
-      })
-
+      // 监听连接事件
       ws.on('connected', () => {
-        set({ connectionState: ConnectionState.Connected, connectionError: null })
         console.log('Connected to server')
+        set({ connectionState: ConnectionState.Connected })
       })
 
       ws.on('disconnected', () => {
-        set({ connectionState: ConnectionState.Disconnected })
         console.log('Disconnected from server')
+        set({
+          connectionState: ConnectionState.Disconnected,
+          player: null,
+          chatMessages: []
+        })
       })
 
-      ws.on('error', (error: any) => {
-        set({ connectionState: ConnectionState.Error, connectionError: error.message })
+      ws.on('error', (error: Error) => {
         console.error('WebSocket error:', error)
+        set({
+          connectionState: ConnectionState.Error,
+          connectionError: error.message
+        })
       })
 
-      // 监听游戏消息
-      ws.on('login', (data: any) => {
-        console.log('Login response:', data)
-        if (data.ok) {
-          set({
-            player: {
-              id: 'player_001',
-              name: '传伟哥',
-              level: 1,
-              experience: 0,
-              health: 100,
-              maxHealth: 100,
-              energy: 100,
-              maxEnergy: 100
-            }
-          })
+      ws.on('login', (response: { ok: boolean; message: string }) => {
+        console.log('Login response:', response)
+        if (response.ok) {
+          // 登录成功，设置玩家信息
+          const loginInfo = get().loginInfo
+          if (loginInfo) {
+            set({
+              player: {
+                id: loginInfo.playerId,
+                name: loginInfo.playerId, // 暂时使用 playerId 作为 name
+                level: 1,
+                experience: 0,
+                health: 100,
+                maxHealth: 100,
+                energy: 100,
+                maxEnergy: 100
+              }
+            })
+          }
         } else {
-          set({ connectionError: data.message })
+          set({
+            connectionError: response.message
+          })
         }
       })
 
-      ws.on('chat', (data: any) => {
-        set((state) => ({
-          chatMessages: [
-            ...state.chatMessages,
-            {
-              fromPlayerId: data.from_player_id,
-              content: data.content,
-              timestamp: Date.now()
-            }
-          ]
-        }))
+      ws.on('chat', (message: ChatMessage) => {
+        console.log('Received chat:', message)
+        get().addChatMessage(message)
       })
 
-      ws.on('heartbeat', (data: any) => {
-        console.log('Heartbeat:', data)
+      ws.on('heartbeat', (response: { timestamp_ms: number }) => {
+        console.log('Heartbeat response:', response)
       })
 
       // 连接
       await ws.connect()
-      set({ webSocket: ws })
-    } catch (error: any) {
-      console.error('Failed to connect:', error)
-      set({ connectionState: ConnectionState.Error, connectionError: error.message })
-    }
-  },
 
-  disconnectFromServer: () => {
-    const { webSocket } = get()
-    if (webSocket) {
-      webSocket.disconnect()
+      set({ ws })
+    } catch (error) {
+      console.error('Failed to connect:', error)
       set({
-        webSocket: null,
-        connectionState: ConnectionState.Disconnected,
-        player: null
+        connectionState: ConnectionState.Error,
+        connectionError: error instanceof Error ? error.message : 'Unknown error'
       })
     }
   },
 
-  login: (playerId: string, token: string) => {
-    const { webSocket } = get()
-    if (webSocket) {
-      webSocket.login(playerId, token)
+  // 断开连接
+  disconnectFromServer: () => {
+    const { ws } = get()
+    if (ws) {
+      ws.disconnect()
+      set({
+        ws: null,
+        connectionState: ConnectionState.Disconnected,
+        player: null,
+        chatMessages: [],
+        loginInfo: null
+      })
     }
   },
 
-  sendChat: (roomId: string, content: string) => {
-    const { webSocket } = get()
-    if (webSocket) {
-      webSocket.sendChat(roomId, content)
+  // 登录
+  login: (playerId: string, token: string) => {
+    const { ws } = get()
+    if (!ws) {
+      console.error('WebSocket not connected')
+      return
     }
+
+    set({ loginInfo: { playerId, token } })
+    ws.login(playerId, token)
+  },
+
+  // 发送聊天
+  sendChat: (roomId: string, content: string) => {
+    const { ws } = get()
+    if (!ws) {
+      console.error('WebSocket not connected')
+      return
+    }
+
+    ws.sendChat(roomId, content)
   }
 }))
 
