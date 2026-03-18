@@ -99,8 +99,8 @@ export class GameWebSocket extends EventEmitter {
     }
 
     try {
-      // 编码为 Protobuf
-      const encoded = protobuf.encodeMessage(type, data)
+      // 编码为带类型前缀的 Protobuf
+      const encoded = protobuf.encodeMessageWithType(type, data)
       this.ws.send(encoded)
       console.log('Sent:', type, data)
     } catch (error) {
@@ -134,20 +134,20 @@ export class GameWebSocket extends EventEmitter {
   // 处理接收到的消息
   private handleMessage(data: ArrayBuffer): void {
     try {
-      // 解码 Protobuf 消息
-      const message = protobuf.decodeMessage(new Uint8Array(data))
-      console.log('Received:', message)
+      // 解码带类型前缀的 Protobuf 消息
+      const { typeName, data: content } = protobuf.decodeMessageWithType(new Uint8Array(data))
+      console.log('Received:', typeName, content)
 
       // 根据消息类型分发事件
-      if (message.S2C_Login) {
-        this.emit('login', message.S2C_Login)
-      } else if (message.S2C_Chat) {
+      if (typeName === 'S2C_Login') {
+        this.emit('login', content)
+      } else if (typeName === 'S2C_Chat') {
         this.emit('chat', {
-          fromPlayerId: message.S2C_Chat.from_player_id,
-          content: message.S2C_Chat.content
+          fromPlayerId: content.from_player_id,
+          content: content.content
         })
-      } else if (message.S2C_Heartbeat) {
-        this.emit('heartbeat', message.S2C_Heartbeat)
+      } else if (typeName === 'S2C_Heartbeat') {
+        this.emit('heartbeat', content)
       }
     } catch (error) {
       console.error('Failed to handle message:', error)
