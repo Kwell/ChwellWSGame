@@ -1,41 +1,39 @@
 <template>
-  <div class="chat-component">
+  <div class="chat-panel">
     <div class="chat-header">
-      <h3>聊天室</h3>
-      <span class="room-id">{{ roomId }}</span>
+      <h3>聊天</h3>
+      <div class="room-info">房间: {{ roomId }}</div>
     </div>
 
     <div class="chat-messages" ref="messagesContainer">
       <div
-        v-for="(message, index) in messages"
+        v-for="(msg, index) in chatMessages"
         :key="index"
         class="message"
-        :class="{ 'own': message.fromPlayerId === playerId }"
+        :class="{ 'own-message': msg.fromPlayerId === playerId }"
       >
-        <div class="message-header">
-          <span class="player-name">{{ message.fromPlayerId }}</span>
-          <span class="message-time">{{ formatTime(message.timestamp) }}</span>
-        </div>
-        <div class="message-content">{{ message.content }}</div>
+        <div class="message-sender">{{ msg.fromPlayerId }}</div>
+        <div class="message-content">{{ msg.content }}</div>
+        <div class="message-time">{{ formatTime(msg.timestamp) }}</div>
       </div>
 
-      <div v-if="messages.length === 0" class="empty-message">
-        暂无消息，开始聊天吧！
+      <div v-if="chatMessages.length === 0" class="empty-state">
+        暂无消息
       </div>
     </div>
 
     <div class="chat-input">
       <input
-        v-model="inputMessage"
+        v-model="newMessage"
         type="text"
         placeholder="输入消息..."
         @keyup.enter="sendMessage"
-        :disabled="!isConnected"
+        :disabled="!canSend"
       />
       <button
         @click="sendMessage"
-        :disabled="!isConnected || !inputMessage.trim()"
-        class="send-button"
+        :disabled="!canSend"
+        class="send-btn"
       >
         发送
       </button>
@@ -44,99 +42,74 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useGameStore } from '../store/game'
 
-interface ChatMessage {
-  fromPlayerId: string
-  content: string
-  timestamp: number
-}
-
 const props = defineProps<{
-  roomId: string
+  roomId?: string
 }>()
 
 const gameStore = useGameStore()
-const messages = ref<ChatMessage[]>([])
-const inputMessage = ref('')
+
+const newMessage = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
 
-const playerId = computed(() => gameStore.player?.id || 'Guest')
-const isConnected = computed(() => gameStore.connectionState === 'connected')
+const roomId = computed(() => props.roomId || 'lobby')
+const playerId = computed(() => gameStore.player?.id || '')
+const connectionState = computed(() => gameStore.connectionState)
+const chatMessages = computed(() => gameStore.chatMessages)
 
-// 发送消息
+const canSend = computed(() => {
+  return (
+    connectionState.value === 'connected' &&
+    newMessage.value.trim() !== '' &&
+    playerId.value !== ''
+  )
+})
+
 const sendMessage = () => {
-  if (!inputMessage.value.trim() || !isConnected.value) return
+  if (!canSend.value) return
 
-  // 发送到后端
-  // TODO: 集成真实的 WebSocket 服务
-  console.log('Sending message:', inputMessage.value)
-
-  // 添加本地消息（临时）
-  addLocalMessage(playerId.value, inputMessage.value)
-
-  inputMessage.value = ''
+  gameStore.sendChat(roomId.value, newMessage.value)
+  newMessage.value = ''
 }
 
-// 添加本地消息
-const addLocalMessage = (fromPlayerId: string, content: string) => {
-  messages.value.push({
-    fromPlayerId,
-    content,
-    timestamp: Date.now()
-  })
-
-  scrollToBottom()
-}
-
-// 格式化时间
-const formatTime = (timestamp: number): string => {
+const formatTime = (timestamp: number) => {
   const date = new Date(timestamp)
-  const hours = date.getHours().toString().padStart(2, '0')
-  const minutes = date.getMinutes().toString().padStart(2, '0')
-  const seconds = date.getSeconds().toString().padStart(2, '0')
-  return `${hours}:${minutes}:${seconds}`
+  return date.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
 }
 
-// 滚动到底部
-const scrollToBottom = () => {
+// 自动滚动到底部
+watch(chatMessages, () => {
   nextTick(() => {
     if (messagesContainer.value) {
       messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
     }
   })
-}
-
-// 监听聊天消息
-onMounted(() => {
-  // TODO: 监听真实的 WebSocket 聊天事件
-  console.log('Chat component mounted for room:', props.roomId)
-})
-
-onUnmounted(() => {
-  // TODO: 清理事件监听
-  console.log('Chat component unmounted')
-})
+}, { deep: true })
 </script>
 
 <style scoped>
-.chat-component {
+.chat-panel {
   display: flex;
   flex-direction: column;
-  background: rgba(255, 255, 255, 0.05);
+  height: 100%;
+  background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   overflow: hidden;
-  height: 100%;
 }
 
 .chat-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 15px 20px;
-  background: rgba(0, 0, 0, 0.3);
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.4);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
@@ -144,26 +117,37 @@ onUnmounted(() => {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: white;
 }
 
-.room-id {
-  padding: 4px 12px;
-  background: rgba(59, 130, 246, 0.2);
-  border: 1px solid rgba(59, 130, 246, 0.4);
-  border-radius: 12px;
-  font-size: 12px;
-  color: #60a5fa;
-  font-weight: 500;
+.room-info {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 15px;
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .message {
@@ -171,68 +155,80 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 4px;
   max-width: 80%;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  animation: fadeIn 0.3s ease;
 }
 
-.message.own {
+.message.own-message {
   align-self: flex-end;
+  background: rgba(102, 126, 234, 0.2);
+  border-color: rgba(102, 126, 234, 0.3);
 }
 
-.message-header {
-  display: flex;
-  gap: 8px;
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-sender {
   font-size: 12px;
-}
-
-.player-name {
   font-weight: 500;
   color: rgba(255, 255, 255, 0.8);
 }
 
-.message-time {
-  color: rgba(255, 255, 255, 0.5);
-}
-
 .message-content {
-  padding: 10px 14px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  word-wrap: break-word;
+  font-size: 14px;
   line-height: 1.5;
+  word-wrap: break-word;
 }
 
-.message.own .message-content {
-  background: rgba(59, 130, 246, 0.2);
-  border-color: rgba(59, 130, 246, 0.3);
-}
-
-.empty-message {
-  text-align: center;
-  padding: 40px;
+.message-time {
+  font-size: 11px;
   color: rgba(255, 255, 255, 0.5);
-  font-style: italic;
+  text-align: right;
+}
+
+.empty-state {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 14px;
 }
 
 .chat-input {
   display: flex;
   gap: 10px;
-  padding: 15px;
-  background: rgba(0, 0, 0, 0.3);
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.4);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .chat-input input {
   flex: 1;
-  padding: 10px 16px;
+  padding: 10px 14px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 6px;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.3);
   color: white;
   font-size: 14px;
+  transition: all 0.2s;
 }
 
-.chat-input input::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+.chat-input input:focus {
+  outline: none;
+  border-color: rgba(102, 126, 234, 0.5);
+  background: rgba(0, 0, 0, 0.5);
 }
 
 .chat-input input:disabled {
@@ -240,8 +236,8 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
-.send-button {
-  padding: 10px 24px;
+.send-btn {
+  padding: 10px 20px;
   border: none;
   border-radius: 6px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -249,15 +245,18 @@ onUnmounted(() => {
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  transition: transform 0.2s, opacity 0.2s;
+  transition: all 0.2s;
 }
 
-.send-button:hover:not(:disabled) {
+.send-btn:hover:not(:disabled) {
   transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
-.send-button:disabled {
+.send-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 </style>

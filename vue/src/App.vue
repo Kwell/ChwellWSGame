@@ -72,6 +72,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useGameStore, ConnectionState } from './store/game'
+import Chat from './components/Chat.vue'
 
 const gameStore = useGameStore()
 
