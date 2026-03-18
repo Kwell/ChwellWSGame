@@ -1,6 +1,6 @@
 # ChwellWSGame
 
-基于 Cocos Creator + TypeScript + Vue 的 H5 游戏客户端。
+基于 Cocos Creator + TypeScript + Vue 3 + Zustand 的 H5 游戏客户端。
 
 ## 技术栈
 
@@ -9,7 +9,27 @@
 - **开发语言**: TypeScript
 - **状态管理**: Zustand (轻量级，适合游戏场景)
 - **通信**: WebSocket + Protobuf
-- **构建工具**: Cocos Creator 构建系统
+- **构建工具**: Vite
+
+## 特性
+
+### 已实现 ✅
+- [x] WebSocket 通信层（自动重连，3s 延迟，5 次最大尝试）
+- [x] Protobuf 协议编解码（目前使用 JSON 作为 fallback）
+- [x] 登录系统（playerId + token 认证）
+- [x] 聊天系统（实时消息、消息历史、自动滚动）
+- [x] 玩家 HUD（生命值、能量、等级、经验）
+- [x] 连接状态管理（未连接/连接中/已连接/错误）
+- [x] 心跳保活（30 秒心跳）
+- [x] 现代深色主题 UI
+- [x] 响应式设计
+
+### 待实现 🚧
+- [ ] Cocos Creator 游戏场景
+- [ ] Vue UI 集成到 Cocos Canvas
+- [ ] 真实 Protobuf 编码（替换 JSON fallback）
+- [ ] 更多协议类型（游戏操作、状态同步等）
+- [ ] 前后端联调测试
 
 ## 架构
 
@@ -26,12 +46,15 @@
                     │
 ┌─────────────────────────────────────────┐
 │  Vue UI Layer (HTML/CSS 组件)          │
-│  ├── 菜单                             │
-│  ├── 弹窗                             │
-│  ├── HUD                              │
-│  └── 设置面板                          │
+│  ├── 连接/登录面板                       │
+│  ├── 聊天室                           │
+│  ├── HUD (生命值/能量/状态)              │
+│  └── 菜单/弹窗                         │
 │                                       │
 │  Zustand Store (全局状态管理)            │
+│  ├── WebSocket 连接状态                   │
+│  ├── 玩家信息                           │
+│  └── 聊天消息历史                       │
 └─────────────────────────────────────────┘
                     │
                     ▼

@@ -63,8 +63,8 @@ export async function initProtobuf(): Promise<void> {
   }
 
   try {
-    // 解析 .proto 文件
-    root = await protobuf.parse(gameProto).root
+    // 解析 .proto 定义
+    root = protobuf.parse(protoDefinition).root
 
     // 获取所有消息类型
     for (const [key, typeName] of Object.entries(messageTypeMap)) {
